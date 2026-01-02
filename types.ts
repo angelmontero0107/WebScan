@@ -5,6 +5,7 @@ export enum VulnerabilityType {
   OPEN_REDIRECT = 'Open Redirect',
   SSRF = 'Server-Side Request Forgery',
   CRLF_INJECTION = 'CRLF Injection',
+  JS_RECON = 'JS Endpoint Discovery',
   NONE = 'None'
 }
 
@@ -14,6 +15,22 @@ export interface SSLInfo {
   expiry: string;
   protocol: string;
   error?: string;
+}
+
+export interface DiscoveredScript {
+  id: string;
+  name: string;
+  url: string;
+  status: 'pending' | 'analyzing' | 'completed' | 'error';
+  findingsCount: number;
+}
+
+export interface JSFinding {
+  endpoint: string;
+  method: string;
+  context: string;
+  risk: 'Low' | 'Medium' | 'High' | 'Critical';
+  description: string;
 }
 
 export interface ScanFinding {
