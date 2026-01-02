@@ -12,9 +12,13 @@ import {
   Info,
   ExternalLink,
   ShieldCheck,
-  FileCode
+  FileCode,
+  FileText,
+  Download
 } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+import { jsPDF } from 'jspdf';
+import autoTable from 'jspdf-autotable';
 import { VulnerabilityType, ScanFinding, ScanResult } from '../types';
 import { SQLI_PAYLOADS, XSS_PAYLOADS, SQL_ERROR_SIGNATURES, EDUCATIONAL_DISCLAIMER } from '../constants';
 import { generatePythonScript, analyzeFindingWithAI } from '../services/geminiService';
@@ -113,6 +117,97 @@ const ScannerDashboard: React.FC = () => {
     setAiAnalyses(prev => ({ ...prev, [index]: analysis }));
   };
 
+  const downloadPDFReport = () => {
+    if (!result) return;
+    
+    const doc = new jsPDF();
+    const timestamp = new Date().toLocaleString();
+    
+    // Title
+    doc.setFontSize(22);
+    doc.setTextColor(16, 185, 129); // Emerald-500
+    doc.text("DAST Security Report", 105, 20, { align: "center" });
+    
+    // Sub-header
+    doc.setFontSize(10);
+    doc.setTextColor(100);
+    doc.text(`Generated on: ${timestamp}`, 105, 28, { align: "center" });
+    
+    doc.setDrawColor(200);
+    doc.line(20, 35, 190, 35);
+    
+    // Target Info
+    doc.setFontSize(12);
+    doc.setTextColor(0);
+    doc.setFont("helvetica", "bold");
+    doc.text("Scan Summary", 20, 45);
+    doc.setFont("helvetica", "normal");
+    doc.text(`Target URL: ${result.targetUrl}`, 20, 52);
+    doc.text(`Total Tests: ${result.totalRequests}`, 20, 59);
+    doc.text(`Findings: ${result.findings.length}`, 20, 66);
+    
+    if (result.findings.length === 0) {
+      doc.setTextColor(0, 128, 0);
+      doc.setFont("helvetica", "bold");
+      doc.text("No vulnerabilities detected.", 20, 80);
+    } else {
+      // Table of findings
+      const tableData = result.findings.map(f => [
+        f.parameter,
+        f.type,
+        f.severity,
+        f.payload.substring(0, 30) + (f.payload.length > 30 ? "..." : "")
+      ]);
+      
+      autoTable(doc, {
+        startY: 75,
+        head: [['Parameter', 'Type', 'Severity', 'Payload']],
+        body: tableData,
+        headStyles: { fillColor: [16, 185, 129] },
+        theme: 'striped'
+      });
+      
+      // Detailed findings on subsequent pages if necessary
+      let currentY = (doc as any).lastAutoTable.finalY + 15;
+      doc.setFont("helvetica", "bold");
+      doc.text("Detailed Findings", 20, currentY);
+      currentY += 10;
+      
+      result.findings.forEach((f, idx) => {
+        if (currentY > 250) {
+          doc.addPage();
+          currentY = 20;
+        }
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(11);
+        doc.text(`Finding #${idx + 1}: ${f.type}`, 20, currentY);
+        currentY += 6;
+        doc.setFont("helvetica", "normal");
+        doc.setFontSize(10);
+        doc.text(`Severity: ${f.severity}`, 25, currentY);
+        currentY += 5;
+        const payloadText = doc.splitTextToSize(`Payload: ${f.payload}`, 160);
+        doc.text(payloadText, 25, currentY);
+        currentY += (payloadText.length * 5);
+        const evidenceText = doc.splitTextToSize(`Evidence: ${f.evidence}`, 160);
+        doc.text(evidenceText, 25, currentY);
+        currentY += (evidenceText.length * 5) + 10;
+      });
+    }
+    
+    // Disclaimer
+    doc.addPage();
+    doc.setFontSize(14);
+    doc.setFont("helvetica", "bold");
+    doc.text("Ethical Disclaimer", 20, 20);
+    doc.setFontSize(10);
+    doc.setFont("helvetica", "italic");
+    const disclaimerLines = doc.splitTextToSize(EDUCATIONAL_DISCLAIMER, 170);
+    doc.text(disclaimerLines, 20, 30);
+    
+    doc.save(`dast_report_${result.targetUrl.replace(/[^a-z0-9]/gi, '_')}.pdf`);
+  };
+
   return (
     <div className="flex flex-col h-screen bg-[#0a0a0b] overflow-hidden">
       {/* Header */}
@@ -184,8 +279,8 @@ const ScannerDashboard: React.FC = () => {
                 <span className="text-xs font-mono text-zinc-300">DAST / Blackbox</span>
               </div>
               <div className="flex items-center justify-between">
-                <span className="text-xs text-zinc-500">Environment</span>
-                <span className="text-xs font-mono text-zinc-300">Sandboxed</span>
+                <span className="text-xs text-zinc-500">Reporting</span>
+                <span className="text-xs font-mono text-emerald-400">PDF Supported</span>
               </div>
             </div>
           </div>
@@ -314,78 +409,89 @@ const ScannerDashboard: React.FC = () => {
                     <div className="flex items-center justify-between">
                       <h2 className="text-2xl font-bold text-white">Vulnerability Report</h2>
                       <div className="flex items-center gap-4">
+                        <button 
+                          onClick={downloadPDFReport}
+                          className="flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg font-bold transition-all text-sm shadow-lg shadow-emerald-500/10"
+                        >
+                          <Download className="w-4 h-4" /> DOWNLOAD PDF
+                        </button>
                         <div className="px-4 py-2 bg-red-500/10 border border-red-500/20 rounded-lg">
-                          <span className="text-xs text-red-400 font-bold">{result.findings.length} High Risk Issues</span>
-                        </div>
-                        <div className="px-4 py-2 bg-emerald-500/10 border border-emerald-500/20 rounded-lg">
-                          <span className="text-xs text-emerald-400 font-bold">5.2s Scan Duration</span>
+                          <span className="text-xs text-red-400 font-bold">{result.findings.length} Issues Identified</span>
                         </div>
                       </div>
                     </div>
 
                     <div className="grid grid-cols-1 gap-4">
-                      {result.findings.map((finding, idx) => (
-                        <div key={idx} className="bg-[#0d0d0e] border border-zinc-800 rounded-xl overflow-hidden hover:border-zinc-700 transition-all group">
-                          <div className="p-6">
-                            <div className="flex items-start justify-between mb-4">
-                              <div className="flex items-center gap-3">
-                                <div className={`p-2 rounded-lg ${finding.severity === 'Critical' ? 'bg-red-500/10' : 'bg-orange-500/10'}`}>
-                                  <AlertTriangle className={`w-5 h-5 ${finding.severity === 'Critical' ? 'text-red-400' : 'text-orange-400'}`} />
-                                </div>
-                                <div>
-                                  <h3 className="text-lg font-bold text-white">{finding.type}</h3>
-                                  <p className="text-sm text-zinc-500 font-mono">Target: <span className="text-zinc-300">GET /{finding.parameter}=...</span></p>
-                                </div>
-                              </div>
-                              <span className={`px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider ${finding.severity === 'Critical' ? 'bg-red-500/20 text-red-400' : 'bg-orange-500/20 text-orange-400'}`}>
-                                {finding.severity}
-                              </span>
-                            </div>
-                            
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-4">
-                              <div className="space-y-3">
-                                <div className="p-3 bg-zinc-900/50 rounded-lg border border-zinc-800">
-                                  <p className="text-[10px] text-zinc-500 uppercase font-bold mb-1">Injected Payload</p>
-                                  <code className="text-sm text-emerald-400 block break-all font-mono">{finding.payload}</code>
-                                </div>
-                                <div className="p-3 bg-zinc-900/50 rounded-lg border border-zinc-800">
-                                  <p className="text-[10px] text-zinc-500 uppercase font-bold mb-1">Evidence Captured</p>
-                                  <p className="text-xs text-zinc-400 italic font-mono leading-relaxed">{finding.evidence}</p>
-                                </div>
-                              </div>
-
-                              <div className="space-y-4">
-                                <div className="flex flex-col h-full">
-                                  <div className="flex items-center justify-between mb-2">
-                                    <p className="text-[10px] text-zinc-500 uppercase font-bold flex items-center gap-2">
-                                      <Terminal className="w-3 h-3" /> AI Remediation Analyst
-                                    </p>
-                                    {!aiAnalyses[idx] && (
-                                      <button 
-                                        onClick={() => getAIAnalysis(idx, finding)}
-                                        className="text-[10px] text-emerald-400 hover:text-emerald-300 font-bold transition-all"
-                                      >
-                                        GENERATE REPORT
-                                      </button>
-                                    )}
+                      {result.findings.length === 0 ? (
+                        <div className="bg-[#0d0d0e] border border-zinc-800 rounded-xl p-10 text-center">
+                          <CheckCircle2 className="w-12 h-12 text-emerald-500 mx-auto mb-4" />
+                          <h3 className="text-white font-bold text-lg">Clean Result</h3>
+                          <p className="text-zinc-500 text-sm">No common vulnerabilities were detected with the provided payloads.</p>
+                        </div>
+                      ) : (
+                        result.findings.map((finding, idx) => (
+                          <div key={idx} className="bg-[#0d0d0e] border border-zinc-800 rounded-xl overflow-hidden hover:border-zinc-700 transition-all group">
+                            <div className="p-6">
+                              <div className="flex items-start justify-between mb-4">
+                                <div className="flex items-center gap-3">
+                                  <div className={`p-2 rounded-lg ${finding.severity === 'Critical' ? 'bg-red-500/10' : 'bg-orange-500/10'}`}>
+                                    <AlertTriangle className={`w-5 h-5 ${finding.severity === 'Critical' ? 'text-red-400' : 'text-orange-400'}`} />
                                   </div>
-                                  <div className="flex-1 bg-zinc-900/30 rounded-lg border border-zinc-800/50 p-4 relative min-h-[100px]">
-                                    {aiAnalyses[idx] ? (
-                                      <div className="text-xs text-zinc-300 leading-relaxed whitespace-pre-wrap">
-                                        {aiAnalyses[idx]}
-                                      </div>
-                                    ) : (
-                                      <div className="flex items-center justify-center h-full text-zinc-600 text-[10px] text-center italic">
-                                        Click 'GENERATE REPORT' to get an AI-powered security deep dive.
-                                      </div>
-                                    )}
+                                  <div>
+                                    <h3 className="text-lg font-bold text-white">{finding.type}</h3>
+                                    <p className="text-sm text-zinc-500 font-mono">Target: <span className="text-zinc-300">GET /{finding.parameter}=...</span></p>
+                                  </div>
+                                </div>
+                                <span className={`px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider ${finding.severity === 'Critical' ? 'bg-red-500/20 text-red-400' : 'bg-orange-500/20 text-orange-400'}`}>
+                                  {finding.severity}
+                                </span>
+                              </div>
+                              
+                              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-4">
+                                <div className="space-y-3">
+                                  <div className="p-3 bg-zinc-900/50 rounded-lg border border-zinc-800">
+                                    <p className="text-[10px] text-zinc-500 uppercase font-bold mb-1">Injected Payload</p>
+                                    <code className="text-sm text-emerald-400 block break-all font-mono">{finding.payload}</code>
+                                  </div>
+                                  <div className="p-3 bg-zinc-900/50 rounded-lg border border-zinc-800">
+                                    <p className="text-[10px] text-zinc-500 uppercase font-bold mb-1">Evidence Captured</p>
+                                    <p className="text-xs text-zinc-400 italic font-mono leading-relaxed">{finding.evidence}</p>
+                                  </div>
+                                </div>
+
+                                <div className="space-y-4">
+                                  <div className="flex flex-col h-full">
+                                    <div className="flex items-center justify-between mb-2">
+                                      <p className="text-[10px] text-zinc-500 uppercase font-bold flex items-center gap-2">
+                                        <Terminal className="w-3 h-3" /> AI Remediation Analyst
+                                      </p>
+                                      {!aiAnalyses[idx] && (
+                                        <button 
+                                          onClick={() => getAIAnalysis(idx, finding)}
+                                          className="text-[10px] text-emerald-400 hover:text-emerald-300 font-bold transition-all"
+                                        >
+                                          GENERATE REPORT
+                                        </button>
+                                      )}
+                                    </div>
+                                    <div className="flex-1 bg-zinc-900/30 rounded-lg border border-zinc-800/50 p-4 relative min-h-[100px]">
+                                      {aiAnalyses[idx] ? (
+                                        <div className="text-xs text-zinc-300 leading-relaxed whitespace-pre-wrap">
+                                          {aiAnalyses[idx]}
+                                        </div>
+                                      ) : (
+                                        <div className="flex items-center justify-center h-full text-zinc-600 text-[10px] text-center italic">
+                                          Click 'GENERATE REPORT' to get an AI-powered security deep dive.
+                                        </div>
+                                      )}
+                                    </div>
                                   </div>
                                 </div>
                               </div>
                             </div>
                           </div>
-                        </div>
-                      ))}
+                        ))
+                      )}
                     </div>
                   </>
                 )}
@@ -399,32 +505,54 @@ const ScannerDashboard: React.FC = () => {
                     <FileCode className="w-6 h-6 text-emerald-400" />
                     <div>
                       <h3 className="text-sm font-bold text-white">Standalone DAST Script Generator</h3>
-                      <p className="text-xs text-zinc-400">Customized Python script using <span className="text-emerald-400 font-mono">requests</span> for external testing.</p>
+                      <p className="text-xs text-zinc-400">Customized Python script with <span className="text-emerald-400 font-mono font-bold italic">fpdf reporting</span> for external testing.</p>
                     </div>
                   </div>
-                  <button 
-                    onClick={() => {
-                      navigator.clipboard.writeText(generatePythonScript(url, params.split(',')));
-                      alert("Script copied to clipboard!");
-                    }}
-                    className="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 text-white text-xs font-bold rounded-lg border border-zinc-700 transition-all flex items-center gap-2"
-                  >
-                    COPY CODE
-                  </button>
+                  <div className="flex gap-2">
+                     <button 
+                      onClick={() => {
+                        navigator.clipboard.writeText(generatePythonScript(url, params.split(',')));
+                        alert("Script copied to clipboard!");
+                      }}
+                      className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-lg border border-emerald-700 transition-all flex items-center gap-2"
+                    >
+                      COPY CODE
+                    </button>
+                  </div>
                 </div>
 
-                <div className="flex-1 bg-[#0d0d0e] border border-zinc-800 rounded-xl overflow-hidden shadow-2xl">
-                  <div className="px-4 py-2 bg-zinc-900 border-b border-zinc-800 flex items-center justify-between">
-                    <div className="flex items-center gap-1.5">
-                      <div className="w-2.5 h-2.5 rounded-full bg-red-500"></div>
-                      <div className="w-2.5 h-2.5 rounded-full bg-amber-500"></div>
-                      <div className="w-2.5 h-2.5 rounded-full bg-emerald-500"></div>
-                    </div>
-                    <span className="text-[10px] font-mono text-zinc-500">dast_scanner.py</span>
-                  </div>
-                  <div className="p-6 h-[500px] overflow-y-auto font-mono text-sm text-zinc-300 bg-black/40">
-                    <pre><code>{generatePythonScript(url, params.split(','))}</code></pre>
-                  </div>
+                <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
+                   <div className="lg:col-span-1 space-y-4">
+                      <div className="bg-zinc-900/50 border border-zinc-800 p-4 rounded-xl">
+                        <div className="flex items-center gap-2 mb-2">
+                           <FileText className="w-4 h-4 text-emerald-400" />
+                           <h4 className="text-xs font-bold text-white uppercase">New Feature</h4>
+                        </div>
+                        <p className="text-[10px] text-zinc-400 leading-relaxed">
+                          This script now includes an automated PDF generation engine. After the scan completes, it produces a professional security report detailing all identified vulnerabilities.
+                        </p>
+                        <div className="mt-4 p-2 bg-black rounded border border-zinc-800">
+                           <p className="text-[9px] font-mono text-zinc-500">Requirements:</p>
+                           <code className="text-[9px] text-emerald-500">pip install fpdf requests</code>
+                        </div>
+                      </div>
+                   </div>
+
+                   <div className="lg:col-span-3">
+                      <div className="bg-[#0d0d0e] border border-zinc-800 rounded-xl overflow-hidden shadow-2xl h-[500px] flex flex-col">
+                        <div className="px-4 py-2 bg-zinc-900 border-b border-zinc-800 flex items-center justify-between">
+                          <div className="flex items-center gap-1.5">
+                            <div className="w-2.5 h-2.5 rounded-full bg-red-500"></div>
+                            <div className="w-2.5 h-2.5 rounded-full bg-amber-500"></div>
+                            <div className="w-2.5 h-2.5 rounded-full bg-emerald-500"></div>
+                          </div>
+                          <span className="text-[10px] font-mono text-zinc-500">dast_scanner_v2.py</span>
+                        </div>
+                        <div className="p-6 overflow-y-auto font-mono text-sm text-zinc-300 bg-black/40 flex-1">
+                          <pre><code>{generatePythonScript(url, params.split(','))}</code></pre>
+                        </div>
+                      </div>
+                   </div>
                 </div>
               </div>
             )}
@@ -478,7 +606,7 @@ const ScannerDashboard: React.FC = () => {
           <div className="flex items-center gap-2">
             <span className="text-emerald-500">READY</span>
             <div className="w-1 h-3 bg-zinc-800"></div>
-            <span>VULNSCAN-CORE v1.0.4-BETA</span>
+            <span>VULNSCAN-CORE v1.1.0-REPORTING</span>
           </div>
           <div className="flex items-center gap-2">
             <span className="text-zinc-600">ENGINE:</span>
