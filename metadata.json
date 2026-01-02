@@ -1,0 +1,5 @@
+{
+  "name": "VulnScan Pro - DAST Researcher Suite",
+  "description": "A comprehensive web vulnerability scanner dashboard for educational security research, featuring SQLi and XSS detection, AI-powered remediation advice, and automated Python script generation.",
+  "requestFramePermissions": []
+}
