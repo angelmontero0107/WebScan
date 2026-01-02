@@ -8,21 +8,24 @@ export const analyzeFindingWithAI = async (finding: ScanFinding) => {
   try {
     const response = await ai.models.generateContent({
       model: "gemini-3-flash-preview",
-      contents: `Como investigador senior de ciberseguridad y experto en pruebas de penetración, realiza un análisis exhaustivo del siguiente hallazgo DAST.
+      contents: `Como investigador senior de ciberseguridad y auditor experto en pruebas de penetración (Red Team), realiza un análisis TÉCNICO EXHAUSTIVO Y SIN OMISIONES del siguiente hallazgo verificado.
       
       Vulnerabilidad: ${finding.type}
-      Parámetro Vulnerable: ${finding.parameter}
-      Payload Utilizado: ${finding.payload}
-      Evidencia Técnica: ${finding.evidence}
-      Raíz del Problema Detectada: ${finding.rootCause}
+      Nivel de Riesgo: ${finding.severity}
+      Parámetro Crítico: ${finding.parameter}
+      Payload de Confirmación Ejecutado: ${finding.payload}
+      Evidencia Técnica Extraída: ${finding.evidence}
+      Descripción del Hallazgo: ${finding.description}
+      Impacto Identificado: ${finding.impact}
+      Causa Raíz Diagnosticada: ${finding.rootCause}
       
-      Proporciona un informe detallado que incluya:
-      1. Análisis Técnico: Explica EXACTAMENTE por qué falla la aplicación.
-      2. Escenario de Explotación: Cómo un atacante podría escalar este problema.
-      3. Impacto de Negocio: Consecuencias para la integridad y confidencialidad de los datos.
-      4. Guía de Remediación Paso a Paso: Código seguro de ejemplo y configuraciones recomendadas.
+      INSTRUCCIONES PARA EL REPORTE:
+      1. ANÁLISIS TÉCNICO PROFUNDO: Desglosa mecánicamente cómo ocurre la falla en el backend. No omitas detalles sobre la falta de sanitización o el flujo de datos.
+      2. ESCENARIO DE EXPLOTACIÓN DETALLADO: Describe paso a paso cómo un atacante real podría escalar este hallazgo (ej: de SQLi a RCE, de XSS a Account Takeover).
+      3. IMPACTO DETALLADO EN EL NEGOCIO: Consecuencias legales, financieras y de reputación.
+      4. GUÍA DE REMEDIACIÓN INTEGRAL: Proporciona código de ejemplo SEGURO (ej: uso de bind parameters, librerías de encoding, configuración de cabeceras de seguridad CSP/HSTS).
       
-      Escribe en español profesional y directo.`,
+      IMPORTANTE: Presenta la información de forma profesional, estructurada y extremadamente completa. No resumas; profundiza en cada punto. Escribe en español técnico.`,
       config: {
         temperature: 0.7,
       }
@@ -31,179 +34,123 @@ export const analyzeFindingWithAI = async (finding: ScanFinding) => {
     return response.text || "No se pudo generar el análisis detallado de IA en este momento.";
   } catch (error) {
     console.error("Error de Gemini AI:", error);
-    return "Análisis de IA no disponible.";
+    return "Error al conectar con el motor de análisis de IA. Por favor, verifique su configuración.";
   }
 };
 
 export const generatePythonScript = (targetUrl: string, params: string[]) => {
-  const sqlPayloads = ["' OR '1'='1", "' UNION SELECT 1,2,3--", "admin'--"];
+  const sqlPayloads = ["' OR '1'='1", "1' AND SLEEP(5)--", "admin'--"];
   const xssPayloads = ["<script>alert(1)</script>", "<img src=x onerror=alert(1)>"];
+  const redirectPayloads = ["https://evil.com", "//google.com"];
+  const ssrfPayloads = ["http://127.0.0.1", "http://169.254.169.254/latest/meta-data/"];
+  const crlfPayloads = ["%0d%0aSet-Cookie: CRLF_Injection=True", "%0d%0aContent-Length: 0%0d%0a%0d%0aHTTP/1.1 200 OK"];
   
   return `import requests
-import urllib.parse
+import time
+import ssl
+import socket
 from datetime import datetime
-try:
-    from fpdf import FPDF
-except ImportError:
-    print("[!] Advertencia: No se encontró la librería fpdf. La generación del reporte PDF fallará.")
-    print("[*] Instálala usando: pip install fpdf")
+from urllib.parse import urlparse
 
-# SOLO PARA USO EDUCATIVO - NO UTILIZAR SIN PERMISO
-# Herramienta de Investigación de Vulnerabilidades - Reporte Técnico Detallado
+# ==============================================================================
+# VULNSCAN PRO - PORTABLE RESEARCH SUITE
+# REPORTE TÉCNICO Y AUTOMATIZACIÓN DAST
+# ==============================================================================
+# DESCARGO DE RESPONSABILIDAD: USO EXCLUSIVAMENTE EDUCATIVO Y AUTORIZADO.
+# ==============================================================================
 
 TARGET_URL = "${targetUrl}"
 PARAMS = ${JSON.stringify(params)}
 
-SQLI_PAYLOADS = ${JSON.stringify(sqlPayloads)}
-XSS_PAYLOADS = ${JSON.stringify(xssPayloads)}
-
-SQL_ERRORS = [
-    "SQL syntax", "mysql_fetch", "ORA-01756", 
-    "SQLite3::query", "PostgreSQL query failed"
-]
-
-def generate_pdf_report(findings, target_url):
-    """
-    Genera un reporte de seguridad PDF técnico y explícito.
-    """
+def verify_ssl(url):
+    """Verifica la integridad del certificado SSL/TLS del objetivo."""
+    parsed = urlparse(url)
+    if parsed.scheme != 'https':
+        print("[!] ADVERTENCIA CRÍTICA: Comunicación insegura (HTTP detectado).")
+        return False
+    
+    hostname = parsed.hostname
+    port = parsed.port or 443
+    print(f"[*] Analizando cadena de confianza para {hostname}...")
+    
+    context = ssl.create_default_context()
     try:
-        pdf = FPDF()
-        pdf.add_page()
-        
-        # Encabezado con estilo profesional
-        pdf.set_fill_color(16, 185, 129)
-        pdf.rect(0, 0, 210, 40, 'F')
-        
-        pdf.set_text_color(255, 255, 255)
-        pdf.set_font("Arial", 'B', 24)
-        pdf.cell(190, 25, txt="INFORME DE VULNERABILIDAD DAST", ln=True, align='C')
-        
-        pdf.set_text_color(230, 230, 230)
-        pdf.set_font("Arial", size=10)
-        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        pdf.cell(190, 5, txt=f"Fecha de Auditoría: {timestamp}", ln=True, align='C')
-        pdf.ln(20)
-        
-        # Información del Objetivo
-        pdf.set_text_color(0, 0, 0)
-        pdf.set_font("Arial", 'B', 14)
-        pdf.cell(190, 10, txt="1. Resumen Ejecutivo del Objetivo", ln=True)
-        pdf.set_font("Arial", size=11)
-        pdf.cell(190, 8, txt=f"URL Base: {target_url}", ln=True)
-        pdf.ln(5)
-        
-        if not findings:
-            pdf.set_text_color(0, 128, 0)
-            pdf.set_font("Arial", 'B', 12)
-            pdf.cell(190, 10, txt="ESTADO: SEGURO (No se detectaron fallos comunes)", ln=True)
-        else:
-            pdf.set_text_color(185, 28, 28)
-            pdf.set_font("Arial", 'B', 12)
-            pdf.cell(190, 10, txt=f"ESTADO: CRÍTICO - {len(findings)} Hallazgos Detectados", ln=True)
-            pdf.set_text_color(0, 0, 0)
-            pdf.ln(5)
-            
-            pdf.set_font("Arial", 'B', 14)
-            pdf.cell(190, 10, txt="2. Detalles Técnicos de los Fallos", ln=True)
-            pdf.ln(2)
-            
-            for i, f in enumerate(findings, 1):
-                # Título del Hallazgo
-                pdf.set_fill_color(244, 244, 245)
-                pdf.set_font("Arial", 'B', 12)
-                pdf.cell(190, 10, txt=f"Hallazgo #{i}: {f['type']}", ln=True, fill=True)
-                
-                pdf.set_font("Arial", 'B', 10)
-                pdf.cell(40, 8, txt="Parámetro:", ln=False)
-                pdf.set_font("Arial", size=10)
-                pdf.cell(150, 8, txt=f['param'], ln=True)
-                
-                pdf.set_font("Arial", 'B', 10)
-                pdf.cell(40, 8, txt="Severidad:", ln=False)
-                pdf.set_font("Arial", 'B', 10)
-                pdf.set_text_color(185, 28, 28)
-                pdf.cell(150, 8, txt="ALTA / CRÍTICA", ln=True)
-                pdf.set_text_color(0, 0, 0)
-                
-                pdf.set_font("Arial", 'B', 10)
-                pdf.cell(190, 8, txt="¿Por qué falla la aplicación? (Análisis Técnico):", ln=True)
-                pdf.set_font("Arial", size=10)
-                pdf.multi_cell(0, 6, txt=f['root_cause'])
-                
-                pdf.set_font("Arial", 'B', 10)
-                pdf.cell(190, 8, txt="Impacto Potencial:", ln=True)
-                pdf.set_font("Arial", size=10)
-                pdf.multi_cell(0, 6, txt=f['impact'])
-                
-                pdf.set_font("Arial", 'B', 10)
-                pdf.cell(40, 8, txt="Payload Utilizado:", ln=False)
-                pdf.set_font("Courier", size=9)
-                pdf.cell(150, 8, txt=f['payload'], ln=True)
-                
-                pdf.set_font("Arial", 'B', 10)
-                pdf.cell(190, 8, txt="Evidencia:", ln=True)
-                pdf.set_font("Arial", 'I', 9)
-                pdf.multi_cell(0, 5, txt=f['evidence'])
-                
-                pdf.ln(5)
-                pdf.line(10, pdf.get_y(), 200, pdf.get_y())
-                pdf.ln(5)
-        
-        report_name = f"reporte_tecnico_dast_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf"
-        pdf.output(report_name)
-        print(f"[*] Reporte Técnico Detallado guardado: {report_name}")
-        
+        with socket.create_connection((hostname, port), timeout=5) as sock:
+            with context.wrap_socket(sock, server_hostname=hostname) as ssock:
+                cert = ssock.getpeercert()
+                expiry = datetime.strptime(cert['notAfter'], '%b %d %H:%M:%S %Y %Z')
+                if expiry < datetime.now():
+                    print(f"  [!] ALERTA: Certificado CADUCADO el {expiry}")
+                    return False
+                print(f"  [+] Certificado SSL válido (Expira: {expiry})")
+                return True
+    except ssl.SSLCertVerificationError as e:
+        print(f"  [!] ERROR SSL: Fallo en la verificación (Posible auto-firmado): {e.reason}")
     except Exception as e:
-        print(f"[E] Error al generar el reporte PDF: {e}")
+        print(f"  [!] ERROR SISTEMA: No se pudo completar la validación SSL: {e}")
+    return False
 
-def scan():
-    print(f"[*] Iniciando Auditoría DAST en {TARGET_URL}")
-    findings = []
+# Vectores de Verificación de Segundo Paso (High Fidelity)
+VERIFY_PAYLOADS = {
+    "SQLI": "' OR 1=1--",
+    "XSS": "<img src=x onerror=alert(1)>",
+    "Redirect": "https://bing.com",
+    "SSRF": "http://169.254.169.254/latest/meta-data/hostname",
+    "CRLF": "%0d%0aInjected-Header: Confirmed"
+}
+
+def confirm_vulnerability(vuln_type, param):
+    """Ejecuta una validación secundaria para descartar falsos positivos."""
+    payload = VERIFY_PAYLOADS.get(vuln_type)
+    if not payload: return False
+    
+    print(f"  [?] Validando hallazgo potential de {vuln_type} en '{param}'...")
+    try:
+        res = requests.get(TARGET_URL, params={param: payload}, timeout=7, allow_redirects=False)
+        if vuln_type == "SQLI" and any(err in res.text.lower() for err in ["sql syntax", "mysql_fetch", "ora-"]): return True
+        elif vuln_type == "XSS" and payload in res.text: return True
+        elif vuln_type == "Redirect" and "bing.com" in res.headers.get("Location", ""): return True
+        elif vuln_type == "SSRF" and any(hit in res.text for hit in ["ami-id", "hostname", "internal"]): return True
+        elif vuln_type == "CRLF" and "Injected-Header" in res.headers: return True
+    except: pass
+    return False
+
+def run_dast_sequence():
+    print(f"[SYSTEM] Iniciando Auditoría Técnica en: {TARGET_URL}")
+    print("-" * 60)
+    verify_ssl(TARGET_URL)
+    print(f"[*] Modo de Operación: Doble Paso (Double-Pass)\\n")
+    
+    findings_count = 0
     
     for param in PARAMS:
-        # Pruebas SQLI
-        sql_vuln_detected = False
-        for payload in SQLI_PAYLOADS:
-            if sql_vuln_detected: break # Evitar duplicados para el mismo parámetro
+        # SQL Injection Sequence
+        for payload in ${JSON.stringify(sqlPayloads)}:
             try:
-                response = requests.get(TARGET_URL, params={param: payload}, timeout=5)
-                for error in SQL_ERRORS:
-                    if error.lower() in response.text.lower():
-                        findings.append({
-                            "type": "Inyección SQL (SQLi)",
-                            "param": param,
-                            "payload": payload,
-                            "evidence": f"Firma detectada: {error}",
-                            "root_cause": "La aplicación concatena entradas del usuario directamente en consultas SQL sin sanitizar ni usar sentencias preparadas. Esto permite alterar la lógica de la base de datos.",
-                            "impact": "Acceso no autorizado a datos sensibles, bypass de autenticación y posible compromiso total del servidor de base de datos."
-                        })
-                        print(f"[!] SQLi detectada en '{param}'")
-                        sql_vuln_detected = True
+                res = requests.get(TARGET_URL, params={param: payload}, timeout=5)
+                if any(err in res.text.lower() for err in ["sql syntax", "mysql_fetch", "ora-", "sqlite"]):
+                    if confirm_vulnerability("SQLI", param):
+                        print(f"[!] VULNERABILIDAD TÉCNICA CONFIRMADA: SQLi en '{param}'")
+                        findings_count += 1
                         break
-            except Exception as e: print(f"[E] Error: {e}")
+            except: pass
 
-        # Pruebas XSS
-        xss_vuln_detected = False
-        for payload in XSS_PAYLOADS:
-            if xss_vuln_detected: break # Evitar duplicados para el mismo parámetro
+        # XSS Sequence
+        for payload in ${JSON.stringify(xssPayloads)}:
             try:
-                response = requests.get(TARGET_URL, params={param: payload}, timeout=5)
-                if payload in response.text:
-                    findings.append({
-                        "type": "XSS Reflejado (Cross-Site Scripting)",
-                        "param": param,
-                        "payload": payload,
-                        "evidence": "El payload exacto fue encontrado en el cuerpo de la respuesta HTTP.",
-                        "root_cause": "La aplicación devuelve la entrada del usuario al navegador sin realizar codificación de caracteres HTML (HTML Encoding). El navegador interpreta el texto como código ejecutable.",
-                        "impact": "Robo de cookies de sesión (Session Hijacking), redirecciones maliciosas y robo de credenciales mediante phishing inyectado."
-                    })
-                    print(f"[!] XSS detectado en '{param}'")
-                    xss_vuln_detected = True
-            except Exception as e: print(f"[E] Error: {e}")
+                res = requests.get(TARGET_URL, params={param: payload}, timeout=5)
+                if payload in res.text:
+                    if confirm_vulnerability("XSS", param):
+                        print(f"[!] VULNERABILIDAD TÉCNICA CONFIRMADA: XSS en '{param}'")
+                        findings_count += 1
+                        break
+            except: pass
 
-    generate_pdf_report(findings, TARGET_URL)
+    print("-" * 60)
+    print(f"[*] Auditoría Finalizada.")
+    print(f"[*] Hallazgos Críticos Confirmados: {findings_count}")
 
 if __name__ == "__main__":
-    scan()
+    run_dast_sequence()
 `;
 };

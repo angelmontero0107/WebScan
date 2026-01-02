@@ -2,7 +2,18 @@
 export enum VulnerabilityType {
   SQLI = 'SQL Injection',
   XSS = 'Reflected XSS',
+  OPEN_REDIRECT = 'Open Redirect',
+  SSRF = 'Server-Side Request Forgery',
+  CRLF_INJECTION = 'CRLF Injection',
   NONE = 'None'
+}
+
+export interface SSLInfo {
+  valid: boolean;
+  issuer: string;
+  expiry: string;
+  protocol: string;
+  error?: string;
 }
 
 export interface ScanFinding {
@@ -23,6 +34,7 @@ export interface ScanResult {
   totalRequests: number;
   findings: ScanFinding[];
   duration: number;
+  sslInfo?: SSLInfo;
 }
 
 export interface HistoryEntry {
