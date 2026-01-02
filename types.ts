@@ -12,6 +12,8 @@ export interface ScanFinding {
   severity: 'Critical' | 'High' | 'Medium' | 'Low';
   evidence: string;
   description: string;
+  impact: string;
+  rootCause: string;
   remediation?: string;
 }
 
@@ -21,6 +23,16 @@ export interface ScanResult {
   totalRequests: number;
   findings: ScanFinding[];
   duration: number;
+}
+
+export interface HistoryEntry {
+  id: string;
+  targetUrl: string;
+  timestamp: string;
+  findingsCount: number;
+  criticalCount: number;
+  highCount: number;
+  summary: string;
 }
 
 export interface Payload {

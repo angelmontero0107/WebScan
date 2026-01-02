@@ -29,4 +29,4 @@ export const SQL_ERROR_SIGNATURES = [
   "Incorrect syntax near",
 ];
 
-export const EDUCATIONAL_DISCLAIMER = `DISCLAIMER: This tool is for educational and authorized security testing purposes ONLY. Running this script against targets without explicit written permission is illegal and unethical. The developer assumes no liability for misuse.`;
+export const EDUCATIONAL_DISCLAIMER = `DESCARGO DE RESPONSABILIDAD: Esta herramienta es SOLO para fines educativos y pruebas de seguridad autorizadas. Ejecutar este script contra objetivos sin permiso explícito por escrito es ilegal y poco ético. El desarrollador no asume ninguna responsabilidad por el mal uso.`;
