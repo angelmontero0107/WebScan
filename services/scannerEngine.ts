@@ -14,7 +14,10 @@ export const executeRealScan = async (options: ScanOptions): Promise<ScanFinding
   const { url, params, proxyUrl, onLog, onProgress } = options;
   const findings: ScanFinding[] = [];
   
-  onLog(`[*] Iniciando análisis técnico en ${new URL(url).hostname}...`);
+  onLog(`[*] Iniciando Auditoría Técnica...`);
+  if (!proxyUrl) {
+    onLog(`[!] ADVERTENCIA: Sin Proxy configurado. El navegador podría bloquear peticiones.`);
+  }
 
   for (let i = 0; i < params.length; i++) {
     const param = params[i];
@@ -28,85 +31,49 @@ export const executeRealScan = async (options: ScanOptions): Promise<ScanFinding
       const testUrl = new URL(url);
       testUrl.searchParams.set(param, test.payload);
       
-      const requestUrl = proxyUrl ? `${proxyUrl}${encodeURIComponent(testUrl.toString())}` : testUrl.toString();
+      const requestUrl = proxyUrl ? `${proxyUrl}${testUrl.toString()}` : testUrl.toString();
       
       try {
-        onLog(`[+] Probando ${test.type} en parámetro '${param}'...`);
+        onLog(`[+] Escaneando '${param}' contra ${test.type}...`);
         const startTime = Date.now();
         
         const response = await fetch(requestUrl, { 
-          mode: proxyUrl ? 'cors' : 'no-cors', // 'no-cors' limitará lo que podemos leer pero evita el crash
-          cache: 'no-cache'
+          mode: 'cors',
+          headers: { 'X-Scanner-Agent': 'VulnScanPro-Linux' }
         });
 
-        // Nota: Si usamos 'no-cors' sin proxy, no podremos leer el body. 
-        // El usuario DEBE usar un proxy para una auditoría funcional.
-        if (response.type === 'opaque' && !proxyUrl) {
-          onLog(`[!] ADVERTENCIA: Respuesta opaca detectada. Instale un CORS Proxy para ver el contenido.`);
-          continue;
-        }
-
-        const duration = Date.now() - startTime;
         const body = await response.text();
+        const duration = Date.now() - startTime;
 
-        // 1. Análisis de SQL Injection
+        // SQLi Detection
         if (test.type === VulnerabilityType.SQLI) {
-          const foundSignature = SQL_ERROR_SIGNATURES.find(sig => body.toLowerCase().includes(sig.toLowerCase()));
-          if (foundSignature) {
+          const found = SQL_ERROR_SIGNATURES.find(sig => body.toLowerCase().includes(sig.toLowerCase()));
+          if (found) {
             findings.push({
-              parameter: param,
-              payload: test.payload,
-              type: VulnerabilityType.SQLI,
-              severity: 'Critical',
-              evidence: `Firma detectada: "${foundSignature}"\nStatus: ${response.status}\nLatencia: ${duration}ms`,
-              description: "El servidor devolvió un error de base de datos procesable.",
-              impact: "Acceso no autorizado a datos sensibles.",
-              rootCause: "Entrada de usuario no saneada en consulta SQL."
+              parameter: param, payload: test.payload, type: VulnerabilityType.SQLI, severity: 'Critical',
+              evidence: `Firma: ${found} | Status: ${response.status} | Time: ${duration}ms`,
+              description: "Error de BD expuesto.", impact: "Fuga de datos masiva.", rootCause: "Inyección SQL."
             });
             onLog(`[!] VULNERABILIDAD SQLi DETECTADA en ${param}`);
           }
         }
 
-        // 2. Análisis de Reflected XSS
-        if (test.type === VulnerabilityType.XSS) {
-          if (body.includes(test.payload)) {
-            findings.push({
-              parameter: param,
-              payload: test.payload,
-              type: VulnerabilityType.XSS,
-              severity: 'High',
-              evidence: `Payload reflejado en el cuerpo de respuesta.\nStatus: ${response.status}`,
-              description: "El payload del script se refleja sin escape en el DOM.",
-              impact: "Ejecución de scripts maliciosos en el contexto del usuario.",
-              rootCause: "Falta de codificación de salida (Output Encoding)."
-            });
-            onLog(`[!] VULNERABILIDAD XSS DETECTADA en ${param}`);
-          }
-        }
-
-        // 3. Análisis de Open Redirect
-        if (test.type === VulnerabilityType.OPEN_REDIRECT) {
-          if (response.redirected && response.url.includes("evil.com")) {
-            findings.push({
-              parameter: param,
-              payload: test.payload,
-              type: VulnerabilityType.OPEN_REDIRECT,
-              severity: 'Medium',
-              evidence: `Redirección confirmada a: ${response.url}`,
-              description: "La aplicación permite redirecciones arbitrarias.",
-              impact: "Ataques de phishing y bypass de seguridad.",
-              rootCause: "Redirección basada en parámetros de usuario sin validación."
-            });
-            onLog(`[!] OPEN REDIRECT DETECTADO en ${param}`);
-          }
+        // XSS Detection
+        if (test.type === VulnerabilityType.XSS && body.includes(test.payload)) {
+          findings.push({
+            parameter: param, payload: test.payload, type: VulnerabilityType.XSS, severity: 'High',
+            evidence: `Payload reflejado en DOM. Status: ${response.status}`,
+            description: "Reflected XSS detectado.", impact: "Robo de sesiones.", rootCause: "Falta de saneamiento."
+          });
+          onLog(`[!] VULNERABILIDAD XSS DETECTADA en ${param}`);
         }
 
       } catch (err: any) {
-        if (err.message === 'Failed to fetch') {
-          onLog(`[!] ERROR DE RED: El navegador bloqueó la petición (CORS). Use un Proxy.`);
-          throw new Error("CORS_BLOCK: Se requiere un proxy para auditar este dominio.");
+        if (err.message.includes('Failed to fetch')) {
+          onLog(`[!] CUIDADO: El navegador bloqueó la petición. ¿Está corriendo el Proxy de Linux?`);
+        } else {
+          onLog(`[!] Error conectando con ${param}: ${err.message}`);
         }
-        onLog(`[!] Error conectando con ${param}: ${err.message}`);
       }
     }
     onProgress(Math.round(((i + 1) / params.length) * 100));
@@ -117,34 +84,21 @@ export const executeRealScan = async (options: ScanOptions): Promise<ScanFinding
 
 export const crawlForScripts = async (targetUrl: string, proxyUrl?: string, onLog?: (msg: string) => void): Promise<string[]> => {
   try {
-    const requestUrl = proxyUrl ? `${proxyUrl}${encodeURIComponent(targetUrl)}` : targetUrl;
-    onLog?.(`[*] Crawler: Intentando acceder a ${targetUrl}...`);
-    
+    const requestUrl = proxyUrl ? `${proxyUrl}${targetUrl}` : targetUrl;
     const response = await fetch(requestUrl);
-    if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    
     const html = await response.text();
     const scriptRegex = /<script\b[^>]*src=["']([^"']+)["'][^>]*>/gi;
     const scripts: string[] = [];
     let match;
-    
     while ((match = scriptRegex.exec(html)) !== null) {
-      let scriptUrl = match[1];
-      if (!scriptUrl.startsWith('http')) {
-        const base = new URL(targetUrl);
-        scriptUrl = new URL(scriptUrl, base.origin).toString();
-      }
-      scripts.push(scriptUrl);
+      let sUrl = match[1];
+      if (!sUrl.startsWith('http')) sUrl = new URL(sUrl, targetUrl).toString();
+      scripts.push(sUrl);
     }
-    
-    onLog?.(`[+] Crawler: Encontrados ${scripts.length} scripts potenciales.`);
+    onLog?.(`[+] Crawler: ${scripts.length} activos identificados.`);
     return scripts;
-  } catch (e: any) {
-    if (e.message === 'Failed to fetch') {
-      onLog?.(`[!] CRAWL ERROR: El navegador bloqueó el acceso (CORS). No se pudieron extraer scripts.`);
-    } else {
-      onLog?.(`[!] CRAWL ERROR: ${e.message}`);
-    }
+  } catch (e) {
+    onLog?.(`[!] Error en crawler: Ejecute el Proxy Local en Linux.`);
     return [];
   }
 };
